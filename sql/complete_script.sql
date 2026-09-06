@@ -646,44 +646,35 @@ GROUP BY cont.continent_name
 ORDER BY cont.continent_name;
 
 ---------------------------------------------------------------
--- M6: Wide table of 5 emissions indicators for USA
+-- M6: All 8 selected indicators for USA, pivoted by date
+-- (conditional aggregation; the unique constraint on
+--  country/indicator/date guarantees one value per cell)
 ---------------------------------------------------------------
 
 CREATE OR REPLACE VIEW M6 AS
-WITH all_dates AS (
-    SELECT DISTINCT data_date
-    FROM data
-    WHERE country_code = 'USA'
-      AND indicator_code IN (SELECT indicator_code FROM topic_indicator_codes)
-)
 SELECT
     d.data_date,
-    co2_tot.value AS EN_ATM_CO2E_KT,
-    co2_pc.value  AS EN_ATM_CO2E_PC,
-    co2_sf.value  AS EN_ATM_CO2E_SF_KT,
-    co2_lf.value  AS EN_ATM_CO2E_LF_KT,
-    co2_gf.value  AS EN_ATM_CO2E_GF_KT
-FROM all_dates d
-LEFT JOIN data co2_tot
-  ON co2_tot.country_code = 'USA'
- AND co2_tot.indicator_code = 'EN_ATM_CO2E_KT'
- AND co2_tot.data_date = d.data_date
-LEFT JOIN data co2_pc
-  ON co2_pc.country_code = 'USA'
- AND co2_pc.indicator_code = 'EN_ATM_CO2E_PC'
- AND co2_pc.data_date = d.data_date
-LEFT JOIN data co2_sf
-  ON co2_sf.country_code = 'USA'
- AND co2_sf.indicator_code = 'EN_ATM_CO2E_SF_KT'
- AND co2_sf.data_date = d.data_date
-LEFT JOIN data co2_lf
-  ON co2_lf.country_code = 'USA'
- AND co2_lf.indicator_code = 'EN_ATM_CO2E_LF_KT'
- AND co2_lf.data_date = d.data_date
-LEFT JOIN data co2_gf
-  ON co2_gf.country_code = 'USA'
- AND co2_gf.indicator_code = 'EN_ATM_CO2E_GF_KT'
- AND co2_gf.data_date = d.data_date
+    MAX(CASE WHEN d.indicator_code = 'EN_ATM_CO2E_KT'    THEN d.value END) AS co2_emissions_kt,
+    MAX(CASE WHEN d.indicator_code = 'EN_ATM_CO2E_PC'    THEN d.value END) AS co2_emissions_per_capita,
+    MAX(CASE WHEN d.indicator_code = 'EN_ATM_CO2E_SF_KT' THEN d.value END) AS solid_fuel_co2_kt,
+    MAX(CASE WHEN d.indicator_code = 'EN_ATM_CO2E_LF_KT' THEN d.value END) AS liquid_fuel_co2_kt,
+    MAX(CASE WHEN d.indicator_code = 'EN_ATM_CO2E_GF_KT' THEN d.value END) AS gas_fuel_co2_kt,
+    MAX(CASE WHEN d.indicator_code = 'FP_CPI_TOTL_ZG'    THEN d.value END) AS inflation_pct,
+    MAX(CASE WHEN d.indicator_code = 'IT_NET_USER_P2'    THEN d.value END) AS internet_users_per_100,
+    MAX(CASE WHEN d.indicator_code = 'NY_GDP_PCAP_CD'    THEN d.value END) AS gdp_per_capita
+FROM data d
+WHERE d.country_code = 'USA'
+  AND d.indicator_code IN (
+      'EN_ATM_CO2E_KT',
+      'EN_ATM_CO2E_PC',
+      'EN_ATM_CO2E_SF_KT',
+      'EN_ATM_CO2E_LF_KT',
+      'EN_ATM_CO2E_GF_KT',
+      'FP_CPI_TOTL_ZG',
+      'IT_NET_USER_P2',
+      'NY_GDP_PCAP_CD'
+  )
+GROUP BY d.data_date
 ORDER BY d.data_date;
 
 ---------------------------------------------------------------
@@ -722,29 +713,31 @@ GROUP BY country_name
 ORDER BY avg_pct_growth DESC;
 
 ---------------------------------------------------------------
--- M8: Countries with 2011 data for any emissions indicator
+-- M8: Countries with 2011 data for at least one of the
+--     8 selected indicators
 ---------------------------------------------------------------
 
 CREATE OR REPLACE VIEW M8 AS
-SELECT DISTINCT country_name
-FROM (
-    SELECT
-        c.country_name,
-        d.indicator_code,
-        d.data_date,
-        ROW_NUMBER() OVER (
-            PARTITION BY d.country_code, d.indicator_code
-            ORDER BY ABS(EXTRACT(YEAR FROM d.data_date) - 2011)
-        ) AS rn
-    FROM data d
-    JOIN country c ON c.country_code = d.country_code
-    WHERE d.indicator_code IN (SELECT indicator_code FROM topic_indicator_codes)
-) x
-WHERE rn = 1   -- nearest to 2011
-ORDER BY country_name;
+SELECT DISTINCT
+    c.country_name
+FROM country c
+JOIN data d ON d.country_code = c.country_code
+WHERE d.data_date >= DATE '2011-01-01'
+  AND d.data_date <  DATE '2012-01-01'
+  AND d.indicator_code IN (
+      'EN_ATM_CO2E_KT',
+      'EN_ATM_CO2E_PC',
+      'EN_ATM_CO2E_LF_KT',
+      'EN_ATM_CO2E_SF_KT',
+      'EN_ATM_CO2E_GF_KT',
+      'FP_CPI_TOTL_ZG',
+      'IT_NET_USER_P2',
+      'NY_GDP_PCAP_CD'
+  )
+ORDER BY c.country_name;
 
 ---------------------------------------------------------------
--- M9: Countries with 2011 data for ALL 5 emissions indicators
+-- M9: Countries with 2011 data for ALL 8 selected indicators
 ---------------------------------------------------------------
 
 CREATE OR REPLACE VIEW M9 AS
@@ -752,15 +745,21 @@ SELECT
     c.country_name
 FROM country c
 JOIN data d ON d.country_code = c.country_code
-WHERE d.indicator_code IN (SELECT indicator_code FROM topic_indicator_codes)
-  AND d.data_date >= DATE '2011-01-01'
+WHERE d.data_date >= DATE '2011-01-01'
   AND d.data_date <  DATE '2012-01-01'
-GROUP BY c.country_name
-HAVING COUNT(DISTINCT d.indicator_code) = 5
+  AND d.indicator_code IN (
+      'EN_ATM_CO2E_KT',
+      'EN_ATM_CO2E_PC',
+      'EN_ATM_CO2E_LF_KT',
+      'EN_ATM_CO2E_SF_KT',
+      'EN_ATM_CO2E_GF_KT',
+      'FP_CPI_TOTL_ZG',
+      'IT_NET_USER_P2',
+      'NY_GDP_PCAP_CD'
+  )
+GROUP BY c.country_code, c.country_name
+HAVING COUNT(DISTINCT d.indicator_code) = 8
 ORDER BY c.country_name;
-
-
-
 /* =====================================================================
    6. ADDITIONAL ANALYSIS VIEWS (A1 – A5)
    ===================================================================== */
@@ -901,63 +900,59 @@ ORDER BY avg_gdp_pc DESC;
 
 ---------------------------------------------------------------
 -- A5: Energy Mix by Development Level
+-- GDP and fuel emissions are taken from the same country AND
+-- date, then the latest such observation is kept per country,
+-- so values from different years never get compared. The date
+-- is included in the output so the comparison year is visible.
 ---------------------------------------------------------------
 
 CREATE OR REPLACE VIEW A5 AS
-WITH latest_gdp AS (
+WITH aligned AS (
     SELECT
-        country_code,
-        value AS gdp_pc,
-        ROW_NUMBER() OVER (
-            PARTITION BY country_code
-            ORDER BY data_date DESC
-        ) AS rn
-    FROM data
-    WHERE indicator_code = 'NY_GDP_PCAP_CD'
-),
-latest_energy AS (
-    SELECT
-        country_code,
-        indicator_code,
-        value,
-        ROW_NUMBER() OVER (
-            PARTITION BY country_code, indicator_code
-            ORDER BY data_date DESC
-        ) AS rn
-    FROM data
-    WHERE indicator_code IN (
+        d.country_code,
+        d.data_date,
+        MAX(CASE WHEN d.indicator_code = 'NY_GDP_PCAP_CD'    THEN d.value END) AS gdp_per_capita,
+        MAX(CASE WHEN d.indicator_code = 'EN_ATM_CO2E_SF_KT' THEN d.value END) AS solid_fuel_co2_kt,
+        MAX(CASE WHEN d.indicator_code = 'EN_ATM_CO2E_LF_KT' THEN d.value END) AS liquid_fuel_co2_kt,
+        MAX(CASE WHEN d.indicator_code = 'EN_ATM_CO2E_GF_KT' THEN d.value END) AS gas_fuel_co2_kt
+    FROM data d
+    WHERE d.indicator_code IN (
+        'NY_GDP_PCAP_CD',
         'EN_ATM_CO2E_SF_KT',
         'EN_ATM_CO2E_LF_KT',
         'EN_ATM_CO2E_GF_KT'
     )
+    GROUP BY d.country_code, d.data_date
+),
+valid_observations AS (
+    SELECT *
+    FROM aligned
+    WHERE gdp_per_capita IS NOT NULL
+      AND (solid_fuel_co2_kt IS NOT NULL
+           OR liquid_fuel_co2_kt IS NOT NULL
+           OR gas_fuel_co2_kt IS NOT NULL)
+),
+ranked AS (
+    SELECT
+        *,
+        ROW_NUMBER() OVER (
+            PARTITION BY country_code
+            ORDER BY data_date DESC
+        ) AS rn
+    FROM valid_observations
 )
 SELECT
     c.country_name,
-    ROUND(g.gdp_pc::numeric, 2) AS gdp_per_capita,
-    ROUND(sf.value::numeric, 2) AS solid_fuel_co2_kt,
-    ROUND(lf.value::numeric, 2) AS liquid_fuel_co2_kt,
-    ROUND(gf.value::numeric, 2) AS gas_fuel_co2_kt,
-    ROUND((COALESCE(sf.value, 0) + COALESCE(lf.value, 0) + COALESCE(gf.value, 0))::numeric, 2) AS total_fuel_co2_kt
-FROM latest_gdp g
-JOIN country c ON c.country_code = g.country_code
-LEFT JOIN latest_energy sf
-  ON sf.country_code = g.country_code
- AND sf.indicator_code = 'EN_ATM_CO2E_SF_KT'
- AND sf.rn = 1
-LEFT JOIN latest_energy lf
-  ON lf.country_code = g.country_code
- AND lf.indicator_code = 'EN_ATM_CO2E_LF_KT'
- AND lf.rn = 1
-LEFT JOIN latest_energy gf
-  ON gf.country_code = g.country_code
- AND gf.indicator_code = 'EN_ATM_CO2E_GF_KT'
- AND gf.rn = 1
-WHERE g.rn = 1
-  AND (sf.value IS NOT NULL OR lf.value IS NOT NULL OR gf.value IS NOT NULL)
-ORDER BY g.gdp_pc DESC;
-
-
-
+    r.data_date,
+    ROUND(r.gdp_per_capita::numeric, 2)     AS gdp_per_capita,
+    ROUND(r.solid_fuel_co2_kt::numeric, 2)  AS solid_fuel_co2_kt,
+    ROUND(r.liquid_fuel_co2_kt::numeric, 2) AS liquid_fuel_co2_kt,
+    ROUND(r.gas_fuel_co2_kt::numeric, 2)    AS gas_fuel_co2_kt,
+    ROUND((COALESCE(r.solid_fuel_co2_kt, 0) + COALESCE(r.liquid_fuel_co2_kt, 0) + COALESCE(r.gas_fuel_co2_kt, 0))::numeric, 2) AS total_fuel_co2_kt
+FROM ranked r
+JOIN country c ON c.country_code = r.country_code
+WHERE r.rn = 1
+ORDER BY r.gdp_per_capita DESC;
 /* =====================================================================
    7. TEST ALL VIEWS – RESULTS, VALIDATION, SUMMARY
    ===================================================================== */
@@ -1093,13 +1088,13 @@ SELECT
     END AS validation_result
 FROM M3;
 
--- Check M6 has exactly 6 columns (date + 5 emissions)
+-- Check M6 has exactly 9 columns (date + 8 indicators)
 SELECT 'Validation: M6 column count' AS check;
 SELECT
     COUNT(*) AS column_count,
     CASE
-        WHEN COUNT(*) = 6 THEN '✓ PASS: M6 has 6 columns'
-        ELSE '✗ FAIL: M6 should have 6 columns'
+        WHEN COUNT(*) = 9 THEN '✓ PASS: M6 has 9 columns'
+        ELSE '✗ FAIL: M6 should have 9 columns'
     END AS validation_result
 FROM information_schema.columns
 WHERE table_schema = 'public'
