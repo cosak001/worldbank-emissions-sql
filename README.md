@@ -92,7 +92,7 @@ The complete written analysis, including result tables, scatterplots, and interp
 
 ## Presentation
 
-A recorded walkthrough of the findings is available here. [Watch the presentation](PASTE_VIDEO_LINK_HERE)
+A recorded walkthrough of the findings is available here. [Watch the presentation](https://youtu.be/bpMA2T3C4SQ)
 
 ## Credits
 
